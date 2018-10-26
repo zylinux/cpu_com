@@ -4,8 +4,12 @@
 #include <QMainWindow>
 #include <QDir>
 #include <QDebug>
-#include "compile.h"
+#include <QString>
+#include <string>
+#include "preprocess.h"
+#include "cpu_instructions.h"
 #include "symbolic_character_process.h"
+#include "compile.h"
 
 namespace Ui {
 class MainWindow;

@@ -70,6 +70,7 @@ void MainWindow::on_pushButtonSave_clicked()
 
 void MainWindow::on_pushButtonCompiler_clicked()
 {
+    QString display;
     //check if you selected file to compile
     if(ui->listWidgetFile->currentRow() < 0)
     {
@@ -92,7 +93,7 @@ void MainWindow::on_pushButtonCompiler_clicked()
     file.close();
 
     //compiling
-    // 1 loading main.c to code string
+    // 1 loading main.c to code string{
     file.setFileName(filename);
     if(!file.open(QIODevice::ReadWrite | QIODevice::Text))
     {
@@ -100,27 +101,29 @@ void MainWindow::on_pushButtonCompiler_clicked()
         return;
     }
     QTextStream out(&file);
-    g_compile_o.m_code = out.readAll();
+    g_compile_o.m_code = out.readAll().toStdString();
     file.close();
     ui->textEditMessage->clear();
     ui->textEditMessage->append("Loading .......... src/main.c");
     // append 16 ' '
     g_compile_o.m_code.append("                ");
+    // 1 loading main.c to code string}
 
 
 
 
-
-    // 2 preprocess include and define code first
+    // 2 preprocess include and define code first{
     g_sc_process_o.symbolic_header_preprocess(g_compile_o.m_code,g_compile_o.m_code_count);
-    ui->textEditMessage->append(g_compile_o.m_code);
+    display = QString::fromStdString(g_compile_o.m_code);
+    ui->textEditMessage->append(display);
+    // 2 preprocess include and define code first}
 
 
-
-    // 3 preprocess replace
+    // 3 preprocess replace define code{
     g_sc_process_o.symbolic_replace_define(g_compile_o.m_code,g_compile_o.m_code_count);
-    ui->textEditMessage->append(g_compile_o.m_code);
-
+    display = QString::fromStdString(g_compile_o.m_code);
+    ui->textEditMessage->append(display);
+    // 3 preprocess replace define code}
 
 
 
