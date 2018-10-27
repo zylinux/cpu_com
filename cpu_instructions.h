@@ -1,7 +1,6 @@
 #ifndef CPU_INSTRUCTIONS_H
 #define CPU_INSTRUCTIONS_H
-#include<QString>
-
+#include "mainwindow.h"
 
 #define IMMEDIATE_TO_A  0
 #define IMMEDIATE_TO_R1  1
@@ -32,7 +31,7 @@
 class cpu_instructions
 {
 public:
-    QString rom_buff;
+    std::string rom_buff;
     int rom_count;
     cpu_instructions();
 };
