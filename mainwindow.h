@@ -6,10 +6,12 @@
 #include <QDebug>
 #include <QString>
 #include <string>
-#include "preprocess.h"
-#include "cpu_instructions.h"
-#include "symbolic_character_process.h"
+#include <QListWidgetItem>
+#include <vector>
 #include "compile.h"
+#include "cpu_instructions.h"
+#include "cpu_symbolic_character_process.h"
+
 
 namespace Ui {
 class MainWindow;
@@ -29,6 +31,8 @@ private slots:
     void on_pushButtonSave_clicked();
 
     void on_pushButtonCompiler_clicked();
+
+    void on_listWidgetFile_itemClicked(QListWidgetItem *item);
 
 private:
     Ui::MainWindow *ui;

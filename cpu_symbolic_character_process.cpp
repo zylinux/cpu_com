@@ -1,5 +1,4 @@
-#include "symbolic_character_process.h"
-
+#include "cpu_symbolic_character_process.h"
 extern compile g_compile_o;
 symbolic_character_process::symbolic_character_process()
 {
@@ -81,14 +80,14 @@ void symbolic_character_process::symbolic_header_preprocess(std::string &str,int
     std::string combinstr = "";
     total = str.size();
     total = total - 16;//16 ' ' in the end
-    while(!flag||count<total)
+    while(!flag&&count<total)
     {
-        this->symbolic_space_newline_comment_jumper(str,count);
+        this->symbolic_space_newline_comment_jumper(buffer,count);
         //qDebug()<<count<<endl;
         if('#'==buffer[count])
         {
             count++;
-            this->symbolic_space_newline_comment_jumper(str,count);
+            this->symbolic_space_newline_comment_jumper(buffer,count);
             //qDebug()<<count<<endl;
             if('A'<= buffer[count] && 'Z'>=buffer[count] || 'a'<= buffer[count] && 'z'>=buffer[count] || '_'==buffer[count])
             {
@@ -108,12 +107,12 @@ void symbolic_character_process::symbolic_header_preprocess(std::string &str,int
                 if(strcmp(tmp.c_str(),inc.c_str())==0)//include found
                 {
                     //qDebug()<<tmp.c_str()<<'-'<<inc.c_str()<<endl;
-                    this->symbolic_space_newline_comment_jumper(str,count);
+                    this->symbolic_space_newline_comment_jumper(buffer,count);
                     //qDebug()<<count<<endl;
                     if('<'==buffer[count])
                     {
                         count++;
-                        this->symbolic_space_newline_comment_jumper(str,count);
+                        this->symbolic_space_newline_comment_jumper(buffer,count);
                         //qDebug()<<count<<endl;
                         tmp.clear();
                         tmp_count=0;
@@ -124,14 +123,14 @@ void symbolic_character_process::symbolic_header_preprocess(std::string &str,int
                             count++;
                         }
                         tmp[tmp_count]='\0';
-                        this->symbolic_space_newline_comment_jumper(str,count);
+                        this->symbolic_space_newline_comment_jumper(buffer,count);
                         //qDebug()<<count<<endl;
                         if('>'==buffer[count])
                         {
                                count++;
                                buffer = buffer.substr(count);
-                               str = buffer; //save current code
-                               g_compile_o.m_codeblock[g_compile_o.m_codeblock_count]=str;
+                               //save current code
+                               g_compile_o.m_codeblock[g_compile_o.m_codeblock_count]=buffer;
                                g_compile_o.m_codeblock_count++;
                                //open the header file and load it into str and clear the count
                                QString filename ="src/";
@@ -143,16 +142,13 @@ void symbolic_character_process::symbolic_header_preprocess(std::string &str,int
                                    return;
                                }
                                QTextStream out(&file);
-                               str = out.readAll().toStdString();
-                               count=0;
-                               clear_count = 0;
-
+                               buffer = out.readAll().toStdString();
                                file.flush();
                                file.close();
-
                                // append 16 ' '
-                               str.append("                ");
-                               buffer = str;
+                               buffer.append("                ");
+                               count=0; // clean count
+                               clear_count = 0;
                                merge = 1;
                                continue;
                         }
@@ -166,7 +162,7 @@ void symbolic_character_process::symbolic_header_preprocess(std::string &str,int
                     combinstr.append("#define ");
                     //part 1
                     //qDebug()<<tmp.c_str()<<'-'<<def.c_str()<<endl;
-                    this->symbolic_space_newline_comment_jumper(str,count);
+                    this->symbolic_space_newline_comment_jumper(buffer,count);
                     //qDebug()<<count<<endl;
                     tmp.clear();
                     tmp_count=0;
@@ -181,7 +177,7 @@ void symbolic_character_process::symbolic_header_preprocess(std::string &str,int
                     //qDebug()<<tmp.c_str()<<endl;
                     combinstr.append(tmp.c_str());
                     //part2
-                    this->symbolic_space_newline_comment_jumper(str,count);
+                    this->symbolic_space_newline_comment_jumper(buffer,count);
                     //qDebug()<<count<<endl;
                     tmp.clear();
                     tmp_count=0;
@@ -222,8 +218,6 @@ void symbolic_character_process::symbolic_header_preprocess(std::string &str,int
 
         if(merge)
         {
-            //flag = 1;
-
             combinstr.append(buffer);
             if(g_compile_o.m_codeblock_count)
             {
@@ -242,15 +236,12 @@ void symbolic_character_process::symbolic_header_preprocess(std::string &str,int
         }
 
     }
-    count=0;
 }
 void symbolic_character_process::symbolic_replace_define(std::string &str,int &count)
 {
 
     std::string buffer = str;
     std::string def = "#define";
-    std::string replace_A[MAX_SRC_FILE]={""};
-    std::string replace_B[MAX_SRC_FILE]={""};
     std::string tmp = "";
 
     int pos = 0,replace_count=0,tmp_count1=0,tmp_count2=0,index=0,i=0;
@@ -267,36 +258,32 @@ void symbolic_character_process::symbolic_replace_define(std::string &str,int &c
         std::string _buffer = buffer.substr(pos,tmp_count1);
         i=0;
         i=i+8;
-        while(i<tmp_count1-pos)
+        while(i<tmp_count1)
         {
                 tmp.clear();
                 tmp_count2=0;
                 while('0'<= _buffer[i] && '9'>=_buffer[i] ||'A'<= _buffer[i] && 'Z'>=_buffer[i] || 'a'<= _buffer[i] && 'z'>=_buffer[i] || '_'==_buffer[i])
                 {
-                        tmp[tmp_count2] = _buffer[i];
                         tmp_count2++;
                         i++;
                 }
-                tmp[tmp_count2]='\0';
-                qDebug()<<tmp.c_str()<<endl;
-                replace_A[index].insert(0,tmp.c_str());
+                tmp = _buffer.substr(i-tmp_count2,tmp_count2);//get A
+                replace_A[index] = tmp;
                 i++;
                 tmp.clear();
                 tmp_count2=0;
                 while('0'<= _buffer[i] && '9'>=_buffer[i] ||'A'<= _buffer[i] && 'Z'>=_buffer[i] || 'a'<= _buffer[i] && 'z'>=_buffer[i] || '_'==_buffer[i])
                 {
-                        tmp[tmp_count2] = _buffer[i];
                         tmp_count2++;
                         i++;
                 }
-                tmp[tmp_count2]='\0';
-                qDebug()<<tmp.c_str()<<endl;
-                replace_B[index].insert(0,tmp.c_str());
+                tmp = _buffer.substr(i-tmp_count2,tmp_count2);//get 8
+                replace_B[index] = tmp;
                 qDebug()<<replace_A[index].c_str()<<"-"<<replace_B[index].c_str()<<endl;
                 index++;
 
         }
-        buffer = buffer.substr(pos+tmp_count1);
+        buffer.replace(pos, tmp_count1,tmp_count1, ' ');//clean up the #define A 8
         pos=0;
     }
     //replace the define from A to 1
@@ -308,7 +295,7 @@ void symbolic_character_process::symbolic_replace_define(std::string &str,int &c
 
     //last return
     str = buffer;
-    count = 0;
+    //count = 0;
 }
 
 
