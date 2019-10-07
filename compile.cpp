@@ -1,5 +1,7 @@
 #include "compile.h"
 extern cpu_instructions g_instruction_o;
+std::string g_keywords[]={"if","else","do","while","for","sizeof","break","continue","return","goto","rom_run","_ACC","_R1","_R2","_R3","_C","_Z","_A","_BIT0","_BIT1","_BIT2","_BIT3","_BIT4","_BIT5","_RAM","NOP"};
+
 compile::compile()
 {
     int i=0;
@@ -18,7 +20,9 @@ compile::compile()
         this->m_local_valuable_name[i]="";
         this->m_local_valuable_address[i]=0;
     }
-    this->m_RAM_allocate_address = 25;
+    this->m_RAM_allocate_address = 0;
+    this->m_RAM_allocate_address_interrupted=0;
+    this->m_RAM_allocate_address_interrupt_status=0;
     //global valuables
     this->m_total_global_valuables=0;
     this->m_global_end_address=0;
@@ -61,8 +65,168 @@ compile::compile()
         this->m_func_paramter_type[i]="";
         this->m_func_paramter_address[i]=0;
     }
-}
 
+    //init key words
+    this->m_keyword = g_keywords;
+    this->m_keyword_total = sizeof(g_keywords)/sizeof(g_keywords[0]);
+
+
+}
+unsigned int compile::items_repeat(std::string str[],unsigned int numbers[], unsigned int count,unsigned int int_or_string)
+{
+    std::map <std::string,int> sm; //for string
+    std::map <int,int> im;//for int
+    unsigned int ret = 0;// 1 means error, 2 means has item repeated. 3 means has no item repeated.
+
+    // show content:
+    /*  for (std::map <std::string,int>::iterator it=m.begin(); it!=m.end(); ++it)
+    {
+        qDebug() << it->first.c_str() << " => " << it->second << '\n';
+    }*/
+
+    if(0==int_or_string && str)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            if (sm.end() != sm.find(str[i]))
+            {
+                sm[str[i]]++;
+            }
+            else
+            {
+                sm.insert(std::pair<std::string, int>(str[i], 1));
+            }
+        }
+        for (auto it : sm)
+        {
+            if(it.second>1)
+            {
+                   ret = 2;
+                   break;//has repeat
+            }
+            else
+            {
+                ret = 3;
+            }
+        }
+
+    }
+    else if(1==int_or_string && numbers)//for int
+    {
+        for (int i = 0; i < count; i++)
+        {
+            if (im.end() != im.find(numbers[i]))
+            {
+                im[numbers[i]]++;
+            }
+            else
+            {
+                im.insert(std::pair<int, int>(numbers[i], 1));
+            }
+        }
+        for (auto it : im)
+        {
+            if(it.second>1)
+            {
+                ret = 2;
+                break;//has repeat
+            }
+            else
+            {
+                ret = 3;
+            }
+        }
+    }
+    else
+    {
+        ret = 1;
+    }
+
+    return ret;
+
+}
+unsigned int compile::items_conflict(std::string ssrc[],std::string sdes[],unsigned int isrc[],unsigned int ides[],unsigned int src_count,unsigned int des_count,unsigned int int_or_string)
+{
+    std::map <std::string,int> sm; //for string
+    std::map <std::string,int>::iterator it_s;
+    std::map <int,int> im;//for int
+    std::map <int,int>::iterator it_i;
+    unsigned int k=0;
+    unsigned int ret = 0;// 1 means error, 2 means has item repeated. 3 means has no item repeated.
+
+    // show content:
+    /*  for (std::map <std::string,int>::iterator it=m.begin(); it!=m.end(); ++it)
+    {
+        qDebug() << it->first.c_str() << " => " << it->second << '\n';
+    }*/
+
+    if(0==int_or_string && sdes)
+    {
+
+        for (int i = 0; i < des_count; i++)
+        {
+            if (sm.end() != sm.find(sdes[i]))
+            {
+                sm[sdes[i]]++;
+            }
+            else
+            {
+                sm.insert(std::pair<std::string, int>(sdes[i], 1));
+            }
+        }
+
+        for(int i;i<src_count;i++)
+        {
+            it_s = sm.find(ssrc[i]);
+            if(it_s == sm.end())
+            {
+                ret = 3;
+            }
+            else
+            {
+                ret = 2;//has repeat
+                return ret;
+            }
+        }
+
+    }
+    else if(1==int_or_string && ides)//for int
+    {
+        for (int i = 0; i < des_count; i++)
+        {
+            if (im.end() != im.find(ides[i]))
+            {
+                im[ides[i]]++;
+            }
+            else
+            {
+                im.insert(std::pair<int, int>(ides[i], 1));
+            }
+        }
+
+        for(int i;i<src_count;i++)
+        {
+            it_i = im.find(isrc[i]);
+            if(it_i == im.end())
+            {
+                ret = 3;
+            }
+            else
+            {
+                ret = 2;
+                return ret;//has repeat
+            }
+        }
+    }
+    else
+    {
+        ret = 1;
+    }
+
+    return ret;
+
+
+}
 
 int compile::symbolic_space_newline_comment_jumper(std::string &str, int &count)
 {
@@ -196,36 +360,26 @@ int compile::get_number_value()
     }
     return ret;
 }
-unsigned char compile::get_valuable(std::string str)
+std::string compile::get_valuable(std::string str)
 {
-    //unsigned char
-    //unsigned int
-    //unsigned long int
-    //char
-    //int
-    //long int
+    //get_valuable_lost,or;
+    //get_valuable_-error
+    //get_valuable_=error
+    //get_valuable_go2funcitonscan
+    //get_valuable_(error
+    //get_valuable_wrong_valuable_name
     //it should return ';'
     std::string str_tmp="";
-    unsigned char ret = 0;
+    std::string status="";
     std::size_t length = this->m_code.length();
     unsigned int pos_s=0;
     unsigned int pos_e=0;
     int value=0;
-    int flag=0; //if ; , ends with 1, if , keep doing
-    //steps
-    //get this->m_local_valuable_type[i]="";
-
-    //this->m_local_valuable_name[this->m_total_local_valuables]="";
-    while(!flag)
+    unsigned int count=0;
+    do
     {
+        this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
         this->m_local_valuable_type[this->m_total_local_valuables] = str;
-
-        if(this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count)==' ')
-        {
-            qDebug()<<"file ends"<<endl;
-            return ' ';
-        }
-        //if it is * or **, add it into type;
         //if *
         if('*' == this->m_code[this->m_code_count])
         {
@@ -238,481 +392,625 @@ unsigned char compile::get_valuable(std::string str)
             this->m_local_valuable_type[this->m_total_local_valuables]=this->m_local_valuable_type[this->m_total_local_valuables]+"*";
             this->m_code_count++;
         }
-        if(this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count)==' ')
-        {
-            qDebug()<<"file ends"<<endl;
-            return ' ';
-        }
+        this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
 
+        this->m_local_valuable_name[this->m_total_local_valuables] = "";
         if('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
         {
                 pos_s=this->m_code_count;
                 pos_e=1;
                 this->m_code_count++;
-                while('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                while('0'<= this->m_code[this->m_code_count] && '9'>=this->m_code[this->m_code_count]||'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                 {
                     pos_e++;
                     this->m_code_count++;
                 }
                 this->m_local_valuable_name[this->m_total_local_valuables] = this->m_code.substr(pos_s,pos_e);//get valuable name
-        }
-        if(this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count)==' ')
-        {
-            qDebug()<<"file ends"<<endl;
-            return ' ';
-        }
-        if('('== this->m_code[this->m_code_count])//we found a fuction , need to return 1, tell up level
-        {
-            ret = 1;
-            return ret;
-        }
-        //if there is no inital value, and if ',' or ';', just give ram like a=10;
-        if(','== this->m_code[this->m_code_count]||';'== this->m_code[this->m_code_count])
-        {
-            this->m_local_valuable_address[this->m_total_local_valuables] = this->m_RAM_allocate_address;
-            if("char"==this->m_local_valuable_type[this->m_total_local_valuables]||"unsigned char"==this->m_local_valuable_type[this->m_total_local_valuables])
-            {
-                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
-            }
-            else if("long int"==this->m_local_valuable_type[this->m_total_local_valuables]||"unsigned long int"==this->m_local_valuable_type[this->m_total_local_valuables])
-            {
-                this->m_RAM_allocate_address = this->m_RAM_allocate_address+4;
-            }
-            else
-            {
-                this->m_RAM_allocate_address = this->m_RAM_allocate_address+2;//for int and unsigned int
-            }
-            this->m_total_local_valuables++;
-            if(';'== this->m_code[this->m_code_count])
-            {
-                flag = 1;
-                ret = this->m_code[this->m_code_count];
-            }
-            else//means , need keep doing scan in this funciton
-            {
-                flag = 0;
-                this->m_code_count++;
-                //this->m_local_valuable_type[this->m_total_local_valuables] = str;
-            }
-        }
-        else if('='== this->m_code[this->m_code_count])//assign value
-        {
-            this->m_code_count++;
-            if(this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count)==' ')
-            {
-                qDebug()<<"file ends"<<endl;
-                return ' ';
-            }
-            if('-'== this->m_code[this->m_code_count])
-            {
-                //get value
-                if('0' <= this->m_code[this->m_code_count] && '9' >=this->m_code[this->m_code_count] || 39 == this->m_code[this->m_code_count])//39 is '
+                this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                //if there is no inital value, and if ',' or ';', just give ram like a=10;
+                if(','== this->m_code[this->m_code_count]||';'== this->m_code[this->m_code_count])
                 {
-                        //get value
-                        value = ~this->get_number_value()+1;
-                        if(this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count)==' ')
+                    this->m_local_valuable_address[this->m_total_local_valuables] = this->m_RAM_allocate_address;
+                    if("char"==this->m_local_valuable_type[this->m_total_local_valuables]||"unsigned char"==this->m_local_valuable_type[this->m_total_local_valuables])
+                    {
+                        this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                    }
+                    else
+                    {
+                        if("long int"==this->m_local_valuable_type[this->m_total_local_valuables]||"unsigned long int"==this->m_local_valuable_type[this->m_total_local_valuables])
                         {
-                            qDebug()<<"file ends"<<endl;
-                            return ' ';
+                            this->m_RAM_allocate_address = this->m_RAM_allocate_address+4;
                         }
-
-                        if(',' == this->m_code[this->m_code_count] || ';' == this->m_code[this->m_code_count])
+                        else
                         {
+                            this->m_RAM_allocate_address = this->m_RAM_allocate_address+2;//for int and unsigned int
+                        }
+                    }
+                    this->m_total_local_valuables++;
+                    status = this->m_code[this->m_code_count];
+                    this->m_code_count++;
+                }
+                else
+                {
+                    if('='== this->m_code[this->m_code_count])
+                    {
+                        this->m_code_count++;
+                        this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                        if('-'== this->m_code[this->m_code_count])
+                        {
+                            this->m_code_count++;
+                            this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                            //get value
+                            if('0' <= this->m_code[this->m_code_count] && '9' >=this->m_code[this->m_code_count] || 39 == this->m_code[this->m_code_count])//39 is '
+                            {
+                                    //get value
+                                    value = ~this->get_number_value()+1;
+                                    this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                                    if(',' == this->m_code[this->m_code_count] || ';' == this->m_code[this->m_code_count])
+                                    {
 
-                            this->m_local_valuable_address[this->m_total_local_valuables] = this->m_RAM_allocate_address;
-                            if("char"==this->m_local_valuable_type[this->m_total_local_valuables]||"unsigned char"==this->m_local_valuable_type[this->m_total_local_valuables])
-                            {
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
-                            }
-                            else if("long int"==this->m_local_valuable_type[this->m_total_local_valuables]||"unsigned long int"==this->m_local_valuable_type[this->m_total_local_valuables])
-                            {
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;//long int 4 bytes
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                        this->m_local_valuable_address[this->m_total_local_valuables] = this->m_RAM_allocate_address;
+                                        if("char"==this->m_local_valuable_type[this->m_total_local_valuables]||"unsigned char"==this->m_local_valuable_type[this->m_total_local_valuables])
+                                        {
+                                            this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                            this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                        }
+                                        else
+                                        {
+                                            if("long int"==this->m_local_valuable_type[this->m_total_local_valuables]||"unsigned long int"==this->m_local_valuable_type[this->m_total_local_valuables])
+                                            {
+                                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;//long int 4 bytes
+                                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                            }
+                                            else
+                                            {
+                                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;//int 2 bytes
+                                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                            }
+                                        }
+                                        this->m_total_local_valuables++;
+                                        status = this->m_code[this->m_code_count];
+                                        this->m_code_count++;
+                                    }
+                                    else
+                                    {
+                                        status="get_valuable_lost,or;";
+                                    }
+                                }
+                                else
+                                {
+                                    status="get_valuable_-error";
+                                }
+
                             }
                             else
                             {
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;//int 2 bytes
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
-                            }
-                            this->m_total_local_valuables++;
-                            if(';'== this->m_code[this->m_code_count])
-                            {
-                                flag = 1;
-                                ret = this->m_code[this->m_code_count];
-                            }
-                            else//means , need keep doing scan in this funciton
-                            {
-                                flag = 0;
-                                //this->m_local_valuable_type[this->m_total_local_valuables] = str;
-                            }
-                            this->m_code_count++;
-                        }
 
-                 }
-            }
-            else if ('0' <= this->m_code[this->m_code_count] && '9' >=this->m_code[this->m_code_count] || 39 == this->m_code[this->m_code_count])//39 is '
-            {
-                        //get value
-                        value = this->get_number_value();
-                        if(this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count)==' ')
-                        {
-                            qDebug()<<"file ends"<<endl;
-                            return ' ';
-                        }
-
-                        if(',' == this->m_code[this->m_code_count] || ';' == this->m_code[this->m_code_count])
-                        {
-                            this->m_local_valuable_address[this->m_total_local_valuables] = this->m_RAM_allocate_address;
-                            if("char"==this->m_local_valuable_type[this->m_total_local_valuables]||"unsigned char"==this->m_local_valuable_type[this->m_total_local_valuables])
-                            {
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                if('0' <= this->m_code[this->m_code_count] && '9' >=this->m_code[this->m_code_count] || 39 == this->m_code[this->m_code_count])//39 is '
+                                {
+                                    value = this->get_number_value();
+                                    this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                                    if(',' == this->m_code[this->m_code_count] || ';' == this->m_code[this->m_code_count])
+                                    {
+                                        this->m_local_valuable_address[this->m_total_local_valuables] = this->m_RAM_allocate_address;
+                                        if("char"==this->m_local_valuable_type[this->m_total_local_valuables]||"unsigned char"==this->m_local_valuable_type[this->m_total_local_valuables])
+                                        {
+                                            this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                            this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                        }
+                                        else
+                                        {
+                                            if("long int"==this->m_local_valuable_type[this->m_total_local_valuables]||"unsigned long int"==this->m_local_valuable_type[this->m_total_local_valuables])
+                                            {
+                                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;//long int 4 bytes
+                                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                            }
+                                            else
+                                            {
+                                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;//int 2 bytes
+                                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
+                                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                            }
+                                        }
+                                        this->m_total_local_valuables++;
+                                        status = this->m_code[this->m_code_count];
+                                        this->m_code_count++;
+                                    }
+                                    else
+                                    {
+                                          status="get_valuable_lost,or;";
+                                    }
+                                }
+                                else
+                                {
+                                    status="get_valuable_=error";
+                                }
                             }
-                            else if("long int"==this->m_local_valuable_type[this->m_total_local_valuables]||"unsigned long int"==this->m_local_valuable_type[this->m_total_local_valuables])
+
+                        }
+                        else
+                        {
+                            //if it is array, more more complicated ?????
+                            if('['== this->m_code[this->m_code_count])
                             {
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;//long int 4 bytes
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+
                             }
                             else
                             {
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;//int 2 bytes
-                                this->init_RAM_with_value(this->m_RAM_allocate_address,value);
-                                this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                                if('('== this->m_code[this->m_code_count]) /* && count == 0)*/
+                                {
+                                    status="get_valuable_go2funcitonscan";
+                                }
+                                else
+                                {
+                                    status="get_valuable_(error";
+                                }
                             }
-                            this->m_total_local_valuables++;
-                            if(';'== this->m_code[this->m_code_count])
-                            {
-                                flag = 1;
-                                ret = this->m_code[this->m_code_count];
-                            }
-                            else//means , need keep doing scan in this funciton
-                            {
-                                flag = 0;
-                                //this->m_local_valuable_type[this->m_total_local_valuables] = str;
-                            }
-                            this->m_code_count++;
                         }
 
-            }
+                }
 
+
+        }//if('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+        else
+        {
+            status="get_valuable_wrong_valuable_name";
         }
-    }
+        //count++
+        //check if ram is enough
+        //if(?????this->m_RAM_allocate_address)
+        //{
+        //status=RAM_OVERFLOW
+        //}
+    }while(","==status);
 
-    //if it is array, more more complicated
-
-    //check if ram is enough
-
-    //
-    return ret;
+    return status;
 }
-unsigned char compile::scan_valuable()
+std::string compile::scan_valuable()
 {
-    std::string _buffer = this->m_code;
-    std::size_t length = this->m_code.length();
+    //scan_valuable_codeover
+    //scan_valuable_over
+    //scan_valuable_unsignederror
+    //scan_valuable_signederror
+    //scan_valuable_charintlongerror
+    //scan_valuable_local_valuable_repeat
+    //scan_valuable_local_valuable_keywords_conflict
+    std::string status = "";
     std::string buffer_tmp="";
     unsigned int pos_save=0;
     unsigned int pos_s=0;
     unsigned int pos_e=0;
-    unsigned char flag=0;//0 means keep doing, flag 1 means finish scaning, flag 2 means arrive code end
-    //1 get string int char .....
-
-    while(!flag&&this->m_code_count<length)
+    unsigned int scan_flag=0;
+    this->m_total_local_valuables = 0;
+    do
     {
-        //space newline comment jumper
-        if(this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count)==' ')
-        {
-            flag=2;//this should not be a white space, if it is means that no code need to deal with anymore
-            qDebug()<<"file ends"<<flag<<endl;
-            continue;
-        }
+        this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
         pos_save = this->m_code_count;//save it
-        if('A'<= _buffer[this->m_code_count] && 'Z'>=_buffer[this->m_code_count] || 'a'<= _buffer[this->m_code_count] && 'z'>=_buffer[this->m_code_count] || '_'==_buffer[this->m_code_count])
+        if('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
         {
             pos_s=this->m_code_count;
             pos_e=1;
             this->m_code_count++;
-            while('A'<= _buffer[this->m_code_count] && 'Z'>=_buffer[this->m_code_count] || 'a'<= _buffer[this->m_code_count] && 'z'>=_buffer[this->m_code_count] || '_'==_buffer[this->m_code_count])
+            while('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
             {
                 pos_e++;
                 this->m_code_count++;
             }
-            buffer_tmp = _buffer.substr(pos_s,pos_e);//get signed or unsigned
+            buffer_tmp = this->m_code.substr(pos_s,pos_e);
+            //unsigned char,unsigned int,unsigned long int
             if(buffer_tmp == "unsigned")//it will have signed char, signed int, signed long int
             {
                 qDebug()<<buffer_tmp.c_str()<<endl;
-                //space newline comment jumper
                 this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
                 pos_s=this->m_code_count;
                 pos_e=1;
-                while('A'<= _buffer[this->m_code_count] && 'Z'>=_buffer[this->m_code_count] || 'a'<= _buffer[this->m_code_count] && 'z'>=_buffer[this->m_code_count] || '_'==_buffer[this->m_code_count])
+                while('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                 {
                     pos_e++;
                     this->m_code_count++;
                 }
-                buffer_tmp = _buffer.substr(pos_s,pos_e);//get char/int/int long
+                buffer_tmp = this->m_code.substr(pos_s,pos_e);//get char/int/int long
                 if(buffer_tmp == "char")
                 {
-                    buffer_tmp="unsigned char";
-                    qDebug()<<buffer_tmp.c_str()<<endl;
-                    if(';'== this->get_valuable(buffer_tmp))
-                    {
-                        continue;
-                    }
-                    else
-                    {
-                        //function
-                        this->m_code_count = pos_save;
-                        return 1;
-                    }
-                }
-                else if(buffer_tmp == "int")
-                {
-                    buffer_tmp="unsigned int";
-                    qDebug()<<buffer_tmp.c_str()<<endl;
-                    if(';'== this->get_valuable(buffer_tmp))
-                    {
-                        continue;
-                    }
-                    else
-                    {
-                        //function
-                        this->m_code_count = pos_save;
-                        return 1;
-                    }
-                }
-                else if(buffer_tmp == "long int")
-                {
-                    buffer_tmp="unsigned long int";
-                    qDebug()<<buffer_tmp.c_str()<<endl;
-                    if(';'== this->get_valuable(buffer_tmp))
-                    {
-                        continue;
-                    }
-                    else
-                    {
-                        //function
-                        this->m_code_count = pos_save;
-                        return 1;
-                    }
+                    qDebug()<<"unsigned char"<<endl;
+                    status = this->get_valuable("unsigned char");
                 }
                 else
                 {
-                    qDebug()<<"No type"<<buffer_tmp.c_str()<<endl;
-                }
-                qDebug()<<buffer_tmp.c_str()<<endl;
-            }
-            else if (buffer_tmp == "signed")//it will have signed char, signed int, signed long int
-            {
-                qDebug()<<buffer_tmp.c_str()<<endl;
-                //space newline comment jumper
-                this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
-                pos_s=this->m_code_count;
-                pos_e=1;
-                while('A'<= _buffer[this->m_code_count] && 'Z'>=_buffer[this->m_code_count] || 'a'<= _buffer[this->m_code_count] && 'z'>=_buffer[this->m_code_count] || '_'==_buffer[this->m_code_count])
-                {
-                    pos_e++;
-                    this->m_code_count++;
-                }
-                buffer_tmp = _buffer.substr(pos_s,pos_e);//get char/int/int long
-                if(buffer_tmp == "char")
-                {
-                    qDebug()<<buffer_tmp.c_str()<<endl;
-                    if(';'== this->get_valuable(buffer_tmp))
+                    if(buffer_tmp == "int")
                     {
-                        continue;
+                        qDebug()<<"unsigned int"<<endl;
+                        status = this->get_valuable("unsigned int");
                     }
                     else
                     {
-                        //function
-                        this->m_code_count = pos_save;
-                        return 1;
-                    }
-                }
-                else if(buffer_tmp == "int")
-                {
-                    qDebug()<<buffer_tmp.c_str()<<endl;
-                    if(';'== this->get_valuable(buffer_tmp))
-                    {
-                        continue;
-                    }
-                    else
-                    {
-                        //function
-                        this->m_code_count = pos_save;
-                        return 1;
-                    }
-                }
-                else if(buffer_tmp == "long int")
-                {
-                    qDebug()<<buffer_tmp.c_str()<<endl;
-                    if(';'== this->get_valuable(buffer_tmp))
-                    {
-                        continue;
-                    }
-                    else
-                    {
-                        //function
-                        this->m_code_count = pos_save;
-                        return 1;
-                    }
+                        if(buffer_tmp == "long")
+                        {
+                            this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                            if('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                            {
+                                pos_s=this->m_code_count;
+                                pos_e=1;
+                                this->m_code_count++;
+                                while('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                                {
+                                    pos_e++;
+                                    this->m_code_count++;
+                                }
+                                buffer_tmp = this->m_code.substr(pos_s,pos_e);//get signed or unsigned
+                                if(buffer_tmp == "int")
+                                {
 
-                }
-                else
-                {
-                    qDebug()<<"No type"<<buffer_tmp.c_str()<<endl;
-                }
-            }
-            else if (buffer_tmp == "char")//int
-            {
-                qDebug()<<buffer_tmp.c_str()<<endl;
-                if(';'== this->get_valuable(buffer_tmp))
-                {
-                    continue;
-                }
-                else
-                {
-                    //function
-                    this->m_code_count = pos_save;
-                    return 1;
-                }
-            }
-            else if (buffer_tmp == "int")//int
-            {
-                qDebug()<<buffer_tmp.c_str()<<endl;
-                if(';'== this->get_valuable(buffer_tmp))
-                {
-                    continue;
-                }
-                else
-                {
-                    //function
-                    this->m_code_count = pos_save;
-                    return 1;
-                }
-            }
-            else if (buffer_tmp == "long") //long int
-            {
-                qDebug()<<buffer_tmp.c_str()<<endl;
-                if(';'== this->get_valuable(buffer_tmp))
-                {
-                    continue;
-                }
-                else
-                {
-                    //function
-                    this->m_code_count = pos_save;
-                    return 1;
+                                    qDebug()<<"unsigned long int"<<endl;
+                                    status = this->get_valuable("unsigned long int");
+                                }
+                                else
+                                {
+                                    status="scan_valuable_unsignederror";//return status
+                                }
+                            }
+                            else
+                            {
+                                status="scan_valuable_unsignederror";
+                            }
+                        }
+                        else
+                        {
+                            status="scan_valuable_unsignederror";
+                        }
+                    }
                 }
             }
             else
             {
-                flag = 1 ;//scan finish
-                qDebug()<<"scan ends"<<flag<<endl;
-                continue;
+                status="scan_valuable_unsignederror";
             }
-        }
-        else if('@'==_buffer[this->m_code_count])//special registers
-        {
-            qDebug()<<"@"<<endl;
+
+            //signed char,signed int,signed long int
+            if (buffer_tmp == "signed")//it will have signed char, signed int, signed long int
+            {
+                qDebug()<<buffer_tmp.c_str()<<endl;
+                this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                pos_s=this->m_code_count;
+                pos_e=1;
+                while('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                {
+                    pos_e++;
+                    this->m_code_count++;
+                }
+                buffer_tmp = this->m_code.substr(pos_s,pos_e);//get char/int/int long
+                if(buffer_tmp == "char")
+                {
+                    qDebug()<<"signed char"<<endl;
+                    status = this->get_valuable("signed char");
+                }
+                else
+                {
+                    if(buffer_tmp == "int")
+                    {
+                        qDebug()<<"signed int"<<endl;
+                        status = this->get_valuable("signed int");
+                    }
+                    else
+                    {
+                        if(buffer_tmp == "long")
+                        {
+                            this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                            if('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                            {
+                                pos_s=this->m_code_count;
+                                pos_e=1;
+                                this->m_code_count++;
+                                while('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                                {
+                                    pos_e++;
+                                    this->m_code_count++;
+                                }
+                                buffer_tmp = this->m_code.substr(pos_s,pos_e);//get signed or unsigned
+                                if(buffer_tmp == "int")
+                                {
+
+                                    qDebug()<<"signed long int"<<endl;
+                                    status = this->get_valuable("signed long int");
+                                }
+                                else
+                                {
+                                    status="scan_valuable_signederror";//return status
+                                }
+                            }
+                            else
+                            {
+                                status="scan_valuable_signederror";
+                            }
+                        }
+                        else
+                        {
+                            status="scan_valuable_signederror";
+                        }
+                    }
+                }
+            }
+            else
+            {
+                status="scan_valuable_signederror";
+            }
+
+            //char, int, long int
+            if (buffer_tmp == "char")
+            {
+                qDebug()<<"char"<<endl;
+                status = this->get_valuable("char");
+            }
+            else
+            {
+                if (buffer_tmp == "int")//int
+                {
+                    qDebug()<<"int"<<endl;
+                    status = this->get_valuable("int");
+                }
+                else
+                {
+                    if (buffer_tmp == "long") //long int
+                    {
+                        qDebug()<<"long int"<<endl;
+                        this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                        if('i'== this->m_code[this->m_code_count]&&'n'== this->m_code[this->m_code_count+1]&&'t'== this->m_code[this->m_code_count+2]&&' '== this->m_code[this->m_code_count+3])
+                        {
+                            this->m_code_count+3;
+                            status = this->get_valuable("long int");
+                        }
+                        else
+                        {
+                            status="scan_valuable_charintlongerror";
+                        }
+                    }
+                    else
+                    {
+                        this->m_code_count = pos_save;
+                        status="scan_valuable_over";
+                    }
+                }
+
+            }
         }
         else
         {
-            flag = 1 ;//scan finish
-            qDebug()<<"scan ends"<<flag<<endl;
-            continue;
+            if(' ' == this->m_code[this->m_code_count])
+            {
+                status="scan_valuable_codeover";
+            }
+            else
+            {
+                if('@' == this->m_code[this->m_code_count])
+                {
+                    this->m_code_count++;
+                    this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                    if('0'<= this->m_code[this->m_code_count] && '9'>=this->m_code[this->m_code_count])
+                    {
+                        if(this->m_RAM_allocate_address_interrupt_status==0)
+                        {
+                            this->m_RAM_allocate_address_interrupted = this->m_RAM_allocate_address;
+
+                        }
+                        this->m_RAM_allocate_address = this->get_number_value();
+                        this->m_RAM_allocate_address_interrupt_status = 1;
+                        status=";";
+                    }
+                    else
+                    {
+                        if(this->m_RAM_allocate_address_interrupt_status==1)
+                        {
+                            this->m_RAM_allocate_address = this->m_RAM_allocate_address_interrupted;
+                            this->m_RAM_allocate_address_interrupt_status=0;
+                        }
+
+                    }
+
+                }
+                else
+                {
+                    this->m_code_count = pos_save;
+                    status="scan_valuable_over";
+                }
+            }
+
         }
 
-    }
-
-    //2 is unsigned
-
-    //3 is signed
-
-    //4 char
-
-    //5 int
-
-    //6 long
-
+    }while(";"==status);
+    scan_flag = 1;
     //7 constants conflict with constants
-
     //8 constants conflict with keywords
 
-    //9 local valuables conflict with valuables
-
+    //9 local valuables conflict with local valuables
+    if(scan_flag && 2 == this->items_repeat(this->m_local_valuable_name,NULL,this->m_total_local_valuables,0))
+    {
+        scan_flag = 0;
+        status = "scan_valuable_local_valuable_repeat";
+    }
     //10 local valuables conflict with constants
 
     //11 local valuables conflict with keywords
-
+    if(scan_flag && 2 == this->items_conflict(this->m_local_valuable_name,this->m_keyword,NULL,NULL,this->m_total_local_valuables,this->m_keyword_total,0) )
+    {
+        scan_flag = 0;
+        status = "scan_valuable_local_valuable_keywords_conflict";
+    }
     //12 global valuables conflict with constants
+
+    if ( "get_valuable_go2funcitonscan" == status)
+    {
+        this->m_code_count = pos_save;
+    }
+
+    return status;
+
+
 
 }
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 //scan funcitons
-unsigned char compile::scan_funciton()
+std::string compile::compiling_all(std::string str)
 {
-    unsigned int ret=0;
+    //compiling_all_m_func_name_conflict_m_global_valuable_name
+    //compiling_all_m_func_name_conflict_m_keyword
+    //compiling_all_m_func_name_repeated
+    //compiling_all_(_error
+    //compiling_all_function_define_{_error
     std::string status = "";
-    this->m_MAIN_entry_in_ROM = this->m_ROM_PAGE_use * SIZE_PER_PAGE + this->m_ROM_Cahce_c;
-    //page_jump(0);
-    this->m_ROM_PAGE[this->m_ROM_PAGE_use] = this->m_ROM_Cache;
-    this->m_ROM_PAGE_byte_use_c[this->m_ROM_PAGE_use]=this->m_ROM_Cahce_c;
-
-    this->m_total_global_valuables = this->m_total_local_valuables;
-    memcpy(this->m_global_valuable_type, this->m_local_valuable_type, sizeof(this->m_local_valuable_type));
-    memcpy(this->m_global_valuable_name, this->m_local_valuable_name, sizeof(this->m_local_valuable_name));
-    memcpy(this->m_global_valuable_address, this->m_local_valuable_address, sizeof(this->m_local_valuable_address));
-    this->m_global_end_address = this->m_RAM_allocate_address;
-    this->m_ROM_PAGE_init_f = 0;
-    //functionbaseaddress[0]=0;
-    //functiontotalnumber=0;
-    do
+    status = str;
+    if("scan_valuable_over" == status||"get_valuable_go2funcitonscan"==status)
     {
-        this->m_RAM_allocate_address = this->m_global_end_address;
-        ret = this->getRAMaddress4function();////1 function not define,2 means ram get address, ok 3 {} mismatch 4 error , we need 2
-        if(2==ret)//success
+        this->m_MAIN_entry_in_ROM = this->m_ROM_PAGE_use * SIZE_PER_PAGE + this->m_ROM_Cahce_c;
+        //page_jump(0);?????
+        this->m_ROM_PAGE[this->m_ROM_PAGE_use] = this->m_ROM_Cache;
+        this->m_ROM_PAGE_byte_use_c[this->m_ROM_PAGE_use]=this->m_ROM_Cahce_c;
+
+        this->m_total_global_valuables = this->m_total_local_valuables;
+        memcpy(this->m_global_valuable_name, this->m_local_valuable_name, sizeof(this->m_local_valuable_name));
+        memcpy(this->m_global_valuable_type, this->m_local_valuable_type, sizeof(this->m_local_valuable_type));
+        memcpy(this->m_global_valuable_address, this->m_local_valuable_address, sizeof(this->m_local_valuable_address));
+        this->m_global_end_address = this->m_RAM_allocate_address;
+
+        this->m_total_functions = 0;
+        this->m_func_paramter_base_address[this->m_total_functions] = 0;
+
+        this->m_ROM_PAGE_init_f = 0;
+
+        do
         {
-            status = this->scan_function_definition();
-            if(")"==status)
+            this->m_RAM_allocate_address = this->m_global_end_address;
+            status = this->getRAMaddress4function();//getRAMaddress4function_{notfouond    getRAMaddress4function_over    getRAMaddress4function_{}mismatch    getRAMaddress4function_functionnotdefine
+            if("getRAMaddress4function_over"==status)//success
             {
-               qDebug()<<"we are compiling function - "<<endl;
-            }
-        }
+                status = this->scan_function_definition();//?????
+                if(")"==status)
+                {
+                   qDebug()<<"NEED-we are compiling "<<this->m_func_name[this->m_total_functions].c_str()<<" function now - looking for {"<<endl;
+                   this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                   if('{'== this->m_code[this->m_code_count])//function start with {
+                   {
+                        this->m_code_count++;
+                        //first scan the internal function valuables
+                        status = this->scan_valuable();//scan_valuable_codeover,scan_valuable_over,scan_valuable_unsignederror,scan_valuable_signederror,scan_valuable_charintlongerror ?????
+                        //function name checking repeat conflict
+                        if(2 == this->items_repeat(this->m_func_name,NULL,this->m_total_functions,0))
+                        {
+                            status = "compiling_all_m_func_name_repeated";
+                            break;
+                        }
+                        //function name and global valuable conflict
+                        if(2 == this->items_conflict(this->m_func_name,this->m_global_valuable_name,NULL,NULL,this->m_total_functions,this->m_total_global_valuables,0))
+                        {
+                            status = "compiling_all_m_func_name_conflict_m_global_valuable_name";
+                            break;
+                        }
+                        //function name and constants conflict ?????
+
+                        //function name and key words conflict
+                        if(2 == this->items_conflict(this->m_func_name,this->m_keyword,NULL,NULL,this->m_total_functions,this->m_keyword_total,0))
+                        {
+                            status = "compiling_all_m_func_name_conflict_m_keyword";
+                            break;
+                        }
+                        //fucntion paramter name and fucntion paramter name repeat conflict
+
+                        //fucntion paramter name and local valuable conflict
+
+                        //fucntion paramter name and constants conflict
+
+                        //fucntion paramter name and key words conflict
+
+                        if("scan_valuable_over"==status)
+                        {
+                            this->m_func_RAM_end_address[this->m_total_functions] = this->m_RAM_allocate_address;//all local valuables ends
+                            if('}'== this->m_code[this->m_code_count])
+                            {
+                                this->function_ends_processing();//dealwith ?????
+                                this->m_code_count++;
+                                this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+
+                                if(' '== this->m_code[this->m_code_count])
+                                {
+                                        status = compile_ends_processing();//?????
+                                }
+                                else
+                                {
+                                        status = "}";
+                                }
 
 
-    } while('}'==this->m_code[this->m_code_count]);
+                            }
+                            else//statements compiling
+                            {
+                                status = statement_processing();// real compile code ?????
+                                if("statement_processing_ok"==status)
+                                {
+                                    this->function_ends_processing();//dealwith ??????
+                                    this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                                    if(' '== this->m_code[this->m_code_count])
+                                    {
+                                            status = this->compile_ends_processing();//?????
+                                    }
+                                    else
+                                    {
+                                            status = "}";
+                                    }
+                                }
+                            }
+
+                        }
+                        else
+                        {
+                            if("scan_valuable_go2funcitonscan"==status)
+                            {
+                                //something wrong
+                                status = "compiling_all_(_error";
+                            }
+                        }
+
+                   }
+                   else
+                   {
+                       status="compiling_all_function_define_error";
+                   }
+                }
+            }//if("getRAMaddress4function_over"==status)//success
+
+
+        } while("}"==status);
+    }
+
+    return status;
 }
 
-unsigned int compile::getRAMaddress4function()
+std::string compile::getRAMaddress4function()
 {
     unsigned int brackets_c = 0;
     std::string func_name="";
+    std::string status="";//getRAMaddress4function_{notfouond    getRAMaddress4function_over    getRAMaddress4function_{}mismatch    getRAMaddress4function_functionnotdefine
     unsigned int pos_save=0;
     unsigned int pos_s=0;
     unsigned int pos_e=0;
     unsigned int func_query_c=0;
-    unsigned int ret=0;//1 function not define,2 means ram get address, ok 3 {} mismatch 4 error
-    unsigned int flag = 0;
     pos_save = this->m_code_count;
-    while('{'!=this->m_code[this->m_code_count] && this->m_code_count< (this->m_code.size()-16))
+    while('{'!=this->m_code[this->m_code_count] && this->m_code_count < (this->m_code.size()-16))
     {
         this->m_code_count++;
     }
@@ -720,6 +1018,7 @@ unsigned int compile::getRAMaddress4function()
     if('{'==this->m_code[this->m_code_count])
     {
         brackets_c=1;
+        status = "keep_going";
         this->m_code_count++;
         do{
             this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
@@ -729,7 +1028,7 @@ unsigned int compile::getRAMaddress4function()
                 pos_s=this->m_code_count;
                 pos_e=1;
                 this->m_code_count++;
-                while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                 {
                     pos_e++;
                     this->m_code_count++;
@@ -755,9 +1054,7 @@ unsigned int compile::getRAMaddress4function()
                         }
                         else
                         {
-                            flag = 1;
-                            qDebug()<<"function not define -"<<func_name.c_str()<<endl;
-                            continue;
+                            status = "getRAMaddress4function_functionnotdefine";
                         }
 
                     }
@@ -773,8 +1070,7 @@ unsigned int compile::getRAMaddress4function()
                     if(0==brackets_c)
                     {
                         this->m_code_count = pos_save;
-                        flag = 2;//get ram address over for functions
-                        continue;
+                        status = "getRAMaddress4function_over";//get ram address over for functions
                     }
                     else
                     {
@@ -783,8 +1079,7 @@ unsigned int compile::getRAMaddress4function()
                 }
                 if(' '==this->m_code[this->m_code_count])
                 {
-                       flag = 3;//{} mismatch
-                       continue;
+                       status = "getRAMaddress4function_{}mismatch";
                 }
                 else
                 {
@@ -799,39 +1094,40 @@ unsigned int compile::getRAMaddress4function()
                     brackets_c++;
                     this->m_code_count++;
                 }
-                if('}'==this->m_code[this->m_code_count])
+                else
                 {
-                    brackets_c--;
-                    if(0==brackets_c)
+                    if('}'==this->m_code[this->m_code_count])
                     {
-                        this->m_code_count = pos_save;
-                        flag = 2;//get ram address over for functions
-                        continue;
+                        brackets_c--;
+                        this->m_code_count++;
+                        if(0==brackets_c)
+                        {
+                            this->m_code_count = pos_save;
+                            status = "getRAMaddress4function_over";//get ram address over for functions
+                        }
                     }
                     else
                     {
-                        this->m_code_count++;
+                        if(' '==this->m_code[this->m_code_count])
+                        {
+                               status = "getRAMaddress4function_{}mismatch";
+                        }
+                        else
+                        {
+                            this->m_code_count++;
+                        }
                     }
                 }
-                if(' '==this->m_code[this->m_code_count])
-                {
-                       flag = 3;//{} mismatch
-                       continue;
-                }
-                else
-                {
-                    this->m_code_count++;
-                }
             }
-        }while(!flag);
+        }while("keep_going"==status);
 
     }
     else
     {
-        flag = 4;//function scan error
+        status = "getRAMaddress4function_{notfouond";//function scan error
     }
-    ret = flag;
-    return flag;
+
+    return status;
 
 }
 
@@ -839,10 +1135,19 @@ unsigned int compile::getRAMaddress4function()
 
 std::string compile::scan_function_definition()
 {
+    //scan_function_definition_return_type_error
+    //scan_function_definition_error_after_unsigned_long
+    //scan_function_definition_error_after_unsigned
+    //
+    //scan_function_definition_error_after_signed
+    //scan_function_definition_error_after_signed_long
+    //
+    //scan_function_definition_error_after_long
+
+    std::string status="";
     unsigned int count = 0;
     unsigned int tmp = 0;
     std::string tmp_name="";
-    std::string status="";
     unsigned int pos_save=0;
     unsigned int pos_s=0;
     unsigned int pos_e=0;
@@ -855,7 +1160,7 @@ std::string compile::scan_function_definition()
         pos_s=this->m_code_count;
         pos_e=1;
         this->m_code_count++;
-        while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+        while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
         {
             pos_e++;
             this->m_code_count++;
@@ -903,7 +1208,7 @@ std::string compile::scan_function_definition()
                     pos_s=this->m_code_count;
                     pos_e=1;
                     this->m_code_count++;
-                    while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                    while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                     {
                         pos_e++;
                         this->m_code_count++;
@@ -915,7 +1220,7 @@ std::string compile::scan_function_definition()
                     }
                     else
                     {
-                        status = "define error after signed";
+                        status = "scan_function_definition_error_after_unsigned";
                     }
                     if("int"==tmp_name)
                     {
@@ -923,7 +1228,7 @@ std::string compile::scan_function_definition()
                     }
                     else
                     {
-                        status = "define error after signed";
+                        status = "scan_function_definition_error_after_unsigned";
                     }
                     if("long"==tmp_name)
                     {
@@ -936,7 +1241,7 @@ std::string compile::scan_function_definition()
                             pos_s=this->m_code_count;
                             pos_e=1;
                             this->m_code_count++;
-                            while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                            while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                             {
                                 pos_e++;
                                 this->m_code_count++;
@@ -948,22 +1253,22 @@ std::string compile::scan_function_definition()
                             }
                             else
                             {
-                                status = "define error after unsigned long";
+                                status = "scan_function_definition_error_after_unsigned_long";
                             }
                         }
                         else
                         {
-                            status = "define error after long";
+                            status = "scan_function_definition_error_after_unsigned_long";
                         }
                     }
                     else
                     {
-                        status = "define error after signed";
+                        status = "scan_function_definition_error_after_unsigned";
                     }
                 }
                 else
                 {
-                    status = "define error after signed";
+                    status = "scan_function_definition_error_after_unsigned";
                 }
             }
             break;
@@ -978,7 +1283,7 @@ std::string compile::scan_function_definition()
                     pos_s=this->m_code_count;
                     pos_e=1;
                     this->m_code_count++;
-                    while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                    while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                     {
                         pos_e++;
                         this->m_code_count++;
@@ -990,7 +1295,7 @@ std::string compile::scan_function_definition()
                     }
                     else
                     {
-                        status = "define error after signed";
+                        status = "scan_function_definition_error_after_signed";
                     }
                     if("int"==tmp_name)
                     {
@@ -998,7 +1303,7 @@ std::string compile::scan_function_definition()
                     }
                     else
                     {
-                        status = "define error after signed";
+                        status = "scan_function_definition_error_after_signed";
                     }
                     if("long"==tmp_name)
                     {
@@ -1011,7 +1316,7 @@ std::string compile::scan_function_definition()
                             pos_s=this->m_code_count;
                             pos_e=1;
                             this->m_code_count++;
-                            while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                            while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                             {
                                 pos_e++;
                                 this->m_code_count++;
@@ -1023,22 +1328,22 @@ std::string compile::scan_function_definition()
                             }
                             else
                             {
-                                status = "define error after signed long";
+                                status = "scan_function_definition_error_after_signed_long";
                             }
                         }
                         else
                         {
-                            status = "define error after signed long";
+                            status = "scan_function_definition_error_after_signed_long";
                         }
                     }
                     else
                     {
-                        status = "define error after signed";
+                        status = "scan_function_definition_error_after_signed_long";
                     }
                 }
                 else
                 {
-                    status = "define error after signed";
+                    status = "scan_function_definition_return_type_error";
                 }
             }
             break;
@@ -1063,7 +1368,7 @@ std::string compile::scan_function_definition()
                         pos_s=this->m_code_count;
                         pos_e=1;
                         this->m_code_count++;
-                        while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                        while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                         {
                             pos_e++;
                             this->m_code_count++;
@@ -1075,12 +1380,12 @@ std::string compile::scan_function_definition()
                         }
                         else
                         {
-                            status = "define error after long";
+                            status = "scan_function_definition_error_after_long";
                         }
                     }
                     else
                     {
-                        status = "define error after long";
+                        status = "scan_function_definition_error_after_long";
                     }
                 }
 
@@ -1101,13 +1406,25 @@ std::string compile::scan_function_definition()
     }
     else
     {
-        status = "function return type error";
+        status = "scan_function_definition_return_type_error";
     }
     return status;
 }
 
 std::string compile::scan_function_name_paramters(std::string str)
 {
+    //scan_function_name_paramters_name_error
+    //scan_function_name_paramters_error_before_(
+    //scan_function_name_paramters_error_before_)
+    //scan_function_name_paramters_void_lose_
+    //scan_function_name_paramters_paramter_error
+    //scan_function_name_paramters_paramter_error_after_unsigned_long
+    //scan_function_name_paramters_paramter_error_after_unsigned
+    //scan_function_name_paramters_paramter_error_after_signed_long
+    //scan_function_name_paramters_paramter_error_after_signed
+    //scan_function_name_paramters_paramter_error_on_long
+    //scan_function_name_paramters_paramter_error_on_long_int
+
     std::string status="";
     std::string tmp_name="";
     unsigned int page=0;
@@ -1133,19 +1450,17 @@ std::string compile::scan_function_name_paramters(std::string str)
             //get function name
             tmp_name="";
             pos_s=this->m_code_count;
-            pos_e=1;
-            this->m_code_count++;
-            while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
-            {
+            pos_e=0;
+            do{
                 pos_e++;
                 this->m_code_count++;
-            }
+            }while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count]);
             tmp_name = this->m_code.substr(pos_s,pos_e);//get function name
             this->m_func_name[this->m_total_functions] = tmp_name;
             this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
             if('('<= this->m_code[this->m_code_count])
             {
-                this->m_func_paramter_base_address[this->m_total_functions]=this->m_func_paramter_offset_address[this->m_total_functions];
+                this->m_func_paramter_offset_address[this->m_total_functions] = this->m_func_paramter_base_address[this->m_total_functions];
                 this->m_code_count++;
                 this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
                 if('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
@@ -1155,7 +1470,7 @@ std::string compile::scan_function_name_paramters(std::string str)
                     pos_s=this->m_code_count;
                     pos_e=1;
                     this->m_code_count++;
-                    while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                    while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                     {
                         pos_e++;
                         this->m_code_count++;
@@ -1164,7 +1479,6 @@ std::string compile::scan_function_name_paramters(std::string str)
                     if("void"==tmp_name)
                     {
                         this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
-                        this->m_code_count++;
                         if(')'==this->m_code[this->m_code_count])
                         {
                             this->m_code_count++;
@@ -1172,7 +1486,7 @@ std::string compile::scan_function_name_paramters(std::string str)
                         }
                         else
                         {
-                            status = "function void paramter error before )";
+                            status = "scan_function_name_paramters_void_lose_)";
                         }
                     }
                     else
@@ -1187,7 +1501,7 @@ std::string compile::scan_function_name_paramters(std::string str)
                                 pos_s=this->m_code_count;
                                 pos_e=1;
                                 this->m_code_count++;
-                                while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                                while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                                 {
                                     pos_e++;
                                     this->m_code_count++;
@@ -1202,7 +1516,7 @@ std::string compile::scan_function_name_paramters(std::string str)
                                         pos_s=this->m_code_count;
                                         pos_e=1;
                                         this->m_code_count++;
-                                        while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                                        while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                                         {
                                             pos_e++;
                                             this->m_code_count++;
@@ -1211,12 +1525,10 @@ std::string compile::scan_function_name_paramters(std::string str)
                                         if("char"==tmp_name)
                                         {
                                                 status = add_function_paramters("unsigned char");
-                                                continue;
                                         }
                                         if("int"==tmp_name)
                                         {
                                                 status = add_function_paramters("unsigned int");
-                                                continue;
                                         }
                                         if("long"==tmp_name)
                                         {
@@ -1227,7 +1539,7 @@ std::string compile::scan_function_name_paramters(std::string str)
                                                 pos_s=this->m_code_count;
                                                 pos_e=1;
                                                 this->m_code_count++;
-                                                while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                                                while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                                                 {
                                                     pos_e++;
                                                     this->m_code_count++;
@@ -1236,26 +1548,25 @@ std::string compile::scan_function_name_paramters(std::string str)
                                                 if("int"==tmp_name)
                                                 {
                                                         status = add_function_paramters("unsigned long int");
-                                                        continue;
                                                 }
                                                 else
                                                 {
-                                                        status = "function paramter error on unsigned long int";
+                                                        status = "scan_function_name_paramters_paramter_error_after_unsigned_long";
                                                 }
                                             }
                                             else
                                             {
-                                                status = "function paramter error on unsigned long int";
+                                                status = "scan_function_name_paramters_paramter_error_after_unsigned_long";
                                             }
                                         }
                                         else
                                         {
-                                                status = "function paramter error on unsigned ";
+                                                status = "scan_function_name_paramters_paramter_error_after_unsigned";
                                         }
                                     }
                                     else
                                     {
-                                        status = "function paramter error on unsigned ";
+                                        status = "scan_function_name_paramters_paramter_error_after_unsigned";
                                     }
 
                                 }
@@ -1268,7 +1579,7 @@ std::string compile::scan_function_name_paramters(std::string str)
                                         pos_s=this->m_code_count;
                                         pos_e=1;
                                         this->m_code_count++;
-                                        while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                                        while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                                         {
                                             pos_e++;
                                             this->m_code_count++;
@@ -1277,12 +1588,10 @@ std::string compile::scan_function_name_paramters(std::string str)
                                         if("char"==tmp_name)
                                         {
                                                 status = add_function_paramters("char");
-                                                continue;
                                         }
                                         if("int"==tmp_name)
                                         {
                                                 status = add_function_paramters("int");
-                                                continue;
                                         }
                                         if("long"==tmp_name)
                                         {
@@ -1293,7 +1602,7 @@ std::string compile::scan_function_name_paramters(std::string str)
                                                 pos_s=this->m_code_count;
                                                 pos_e=1;
                                                 this->m_code_count++;
-                                                while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                                                while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
                                                 {
                                                     pos_e++;
                                                     this->m_code_count++;
@@ -1302,81 +1611,80 @@ std::string compile::scan_function_name_paramters(std::string str)
                                                 if("int"==tmp_name)
                                                 {
                                                         status = add_function_paramters("long int");
-                                                        continue;
                                                 }
                                                 else
                                                 {
-                                                        status = "function paramter error on signed long int";
+                                                        status = "scan_function_name_paramters_paramter_error_after_signed_long";
                                                 }
                                             }
                                             else
                                             {
-                                                status = "function paramter error on signed long int";
+                                                status = "scan_function_name_paramters_paramter_error_after_signed_long";
                                             }
                                         }
                                         else
                                         {
-                                                status = "function paramter error on signed ";
+                                                status = "scan_function_name_paramters_paramter_error_after_signed";
                                         }
                                     }
                                     else
                                     {
-                                        status = "function paramter error on signed ";
+                                        status = "scan_function_name_paramters_paramter_error_after_signed";
                                     }
                                 }
                                 if("char"==tmp_name)
                                 {
                                     status = add_function_paramters("char");
-                                    continue;
-                                }
-                                if("int"==tmp_name)
-                                {
-                                    status = add_function_paramters("int");
-                                    continue;
-                                }
-                                if("long"==tmp_name)
-                                {
-                                    this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
-                                    if('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
-                                    {
-                                        tmp_name="";
-                                        pos_s=this->m_code_count;
-                                        pos_e=1;
-                                        this->m_code_count++;
-                                        while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] && 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
-                                        {
-                                            pos_e++;
-                                            this->m_code_count++;
-                                        }
-                                        tmp_name = this->m_code.substr(pos_s,pos_e);//get paramter type
-                                        if("int"==tmp_name)
-                                        {
-                                                status = add_function_paramters("long int");
-                                                continue;
-                                        }
-                                        else
-                                        {
-                                                status = "function paramter error on long int";
-                                        }
-                                    }
-                                    else
-                                    {
-                                        status = "function paramter error on long int";
-                                    }
-
                                 }
                                 else
                                 {
-                                    this->m_code_count = count;
-                                    status = add_function_paramters("int");
-                                    continue;
+                                    if("int"==tmp_name)
+                                    {
+                                        status = add_function_paramters("int");
+                                    }
+                                    else
+                                    {
+                                        if("long"==tmp_name)
+                                        {
+                                            this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                                            if('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                                            {
+                                                tmp_name="";
+                                                pos_s=this->m_code_count;
+                                                pos_e=1;
+                                                this->m_code_count++;
+                                                while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                                                {
+                                                    pos_e++;
+                                                    this->m_code_count++;
+                                                }
+                                                tmp_name = this->m_code.substr(pos_s,pos_e);//get paramter type
+                                                if("int"==tmp_name)
+                                                {
+                                                        status = add_function_paramters("long int");
+                                                }
+                                                else
+                                                {
+                                                        status = "scan_function_name_paramters_paramter_error_on_long_int";
+                                                }
+                                            }
+                                            else
+                                            {
+                                                status = "scan_function_name_paramters_paramter_error_on_long";
+                                            }
+
+                                        }
+                                        else
+                                        {
+                                            this->m_code_count = count;
+                                            status = add_function_paramters("int");
+                                        }
+                                    }
                                 }
-
-
                             }
                             else
                             {
-                                status = "function paramter error before (";
+                                status = "scan_function_name_paramters_paramter_error";
                             }
 
 
@@ -1384,25 +1692,63 @@ std::string compile::scan_function_name_paramters(std::string str)
                     }
 
                 }
-                if(')'== this->m_code[this->m_code_count])
-                {
-                    this->m_code_count++;
-                    status = ")";
-                }
                 else
                 {
-                    status = "function paramter error before )";
+                    if(')'== this->m_code[this->m_code_count])
+                    {
+                        this->m_code_count++;
+                        status = ")";
+                    }
+                    else
+                    {
+                        status = "scan_function_name_paramters_error_before_)";
+                    }
                 }
 
             }
             else
             {
-                status = "function name error before (";
+                status = "scan_function_name_paramters_error_before_(";
+            }
+
+
+            if(")"==status)//finished paramters scan as good one
+            {
+                this->m_func_return_address[this->m_total_functions] = this->m_RAM_allocate_address;
+                this->m_func_paramter_base_address[this->m_total_functions+1] = this->m_func_paramter_offset_address[this->m_total_functions];//next paramter base address is this time offset address
+                this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                if('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                {
+                    tmp_name="";
+                    pos_s=this->m_code_count;
+                    pos_e=1;
+                    this->m_code_count++;
+                    while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+                    {
+                        pos_e++;
+                        this->m_code_count++;
+                    }
+                    tmp_name = this->m_code.substr(pos_s,pos_e);
+                    if("rom"==tmp_name)
+                    {
+                        //this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                        //?????
+
+                    }
+                    else
+                    {
+                        status="";//?????
+                    }
+                }
+                else
+                {
+                    //?????
+                }
             }
     }
     else
     {
-       status = "function name error";
+       status = "scan_function_name_paramters_name_error";
     }
 
     return status;
@@ -1411,7 +1757,144 @@ std::string compile::scan_function_name_paramters(std::string str)
 
 std::string compile::add_function_paramters(std::string str)
 {
+    //unsigned int m_func_paramter_base_address[MAX_FUNCTION];per function, m_func_paramter_base_address[MAX_FUNCTION] = m_func_paramter_base_address[MAX_FUNCTION] + m_func_paramter_offset_address[MAX_FUNCTION];
+    //unsigned int m_func_paramter_offset_address[MAX_FUNCTION]; per function,but will keep change if you have many paramters, mean which paramter.(int a , int b , int c....), it will be 0 1 2...
+
+    //std::string  m_func_paramter_name[MAX_FUNCTION]; per paramter(m_func_paramter_offset_address) not per funcion!, all functions use it,m_func_paramter_name[m_func_paramter_offset_address];
+    //std::string  m_func_paramter_type[MAX_FUNCTION]; per paramter(m_func_paramter_offset_address) not per funcion!, all functions use it,m_func_paramter_type[m_func_paramter_offset_address];
+    //unsigned int m_func_paramter_address[MAX_FUNCTION];per paramter(m_func_paramter_offset_address) not per funcion!, all functions use it,m_func_paramter_type[m_func_paramter_offset_address];
+
+
+    //add_function_paramters_paramter_name_error
+    //
+    //
+    //
     std::string status="";
-    status = ")";
+    std::string tmp_name="";
+    unsigned int pos_s=0;
+    unsigned int pos_e=0;
+
+    this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+
+    this->m_func_paramter_type[this->m_func_paramter_offset_address[this->m_total_functions]] = str;
+
+    if('*'== this->m_code[this->m_code_count])
+    {
+        this->m_func_paramter_type[this->m_func_paramter_offset_address[this->m_total_functions]] = this->m_func_paramter_type[this->m_func_paramter_offset_address[this->m_total_functions]]+"*";
+        this->m_code_count++;
+    }
+    if('*'== this->m_code[this->m_code_count])
+    {
+        this->m_func_paramter_type[this->m_func_paramter_offset_address[this->m_total_functions]] = this->m_func_paramter_type[this->m_func_paramter_offset_address[this->m_total_functions]]+"*";
+        this->m_code_count++;
+    }
+
+    this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+
+    this->m_func_paramter_name[this->m_func_paramter_offset_address[this->m_total_functions]]="";
+
+    if('A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+    {
+            tmp_name="";
+            pos_s=this->m_code_count;
+            pos_e=1;
+            this->m_code_count++;
+            while('0'<= this->m_code[this->m_code_count] && '9'>= this->m_code[this->m_code_count] || 'A'<= this->m_code[this->m_code_count] && 'Z'>=this->m_code[this->m_code_count] || 'a'<= this->m_code[this->m_code_count] && 'z'>=this->m_code[this->m_code_count] || '_'==this->m_code[this->m_code_count])
+            {
+                pos_e++;
+                this->m_code_count++;
+            }
+            tmp_name = this->m_code.substr(pos_s,pos_e);//get paramter name
+            this->m_func_paramter_name[this->m_func_paramter_offset_address[this->m_total_functions]] = tmp_name;
+
+            this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+
+            if(','== this->m_code[this->m_code_count] || ')'== this->m_code[this->m_code_count])
+            {
+                this->m_func_paramter_address[this->m_func_paramter_offset_address[this->m_total_functions]] = this->m_RAM_allocate_address;
+                if("char"==this->m_func_paramter_type[this->m_func_paramter_offset_address[this->m_total_functions]]||"unsigned char"==this->m_func_paramter_type[this->m_func_paramter_offset_address[this->m_total_functions]])
+                {
+                    this->m_RAM_allocate_address = this->m_RAM_allocate_address+1;
+                }
+                else
+                {
+                    if("long int"==this->m_func_paramter_type[this->m_func_paramter_offset_address[this->m_total_functions]]||"unsigned long int"==this->m_func_paramter_type[this->m_func_paramter_offset_address[this->m_total_functions]])
+                    {
+                        this->m_RAM_allocate_address = this->m_RAM_allocate_address+4;
+                    }
+                    else
+                    {
+                        this->m_RAM_allocate_address = this->m_RAM_allocate_address+2;
+                    }
+                }
+                //next paramter in (.......)
+                this->m_func_paramter_offset_address[this->m_total_functions] = this->m_func_paramter_offset_address[this->m_total_functions] + 1;
+                status = this->m_code[this->m_code_count];
+                this->m_code_count++;
+            }
+            else
+            {
+               /* if('['== this->m_code[this->m_code_count])
+                {
+                    this->m_code_count++;
+                    this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                    if(']'== this->m_code[this->m_code_count])
+                    {
+                        this->m_code_count++;
+                        this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
+                        this->m_func_paramter_type[this->m_func_paramter_offset_address[this->m_total_functions]]=this->m_func_paramter_type[this->m_func_paramter_offset_address[this->m_total_functions]] + "[]";
+                        if(','== this->m_code[this->m_code_count] || ')'== this->m_code[this->m_code_count])
+                        {
+                            this->m_func_paramter_address[this->m_func_paramter_offset_address[this->m_total_functions]] = this->m_RAM_allocate_address;
+                            this->m_RAM_allocate_address = this->m_RAM_allocate_address+2;
+                            this->m_func_paramter_offset_address[this->m_total_functions] = this->m_func_paramter_offset_address[this->m_total_functions] + 1;
+                            status = this->m_code[this->m_code_count];
+                            this->m_code_count++;
+                        }
+                        else
+                        {
+                            status = "add_function_paramters_lost ] for paramters";
+                        }
+                    }
+                    else
+                    {
+                        status = "add_function_paramters_lost ] for paramters";
+                    }
+
+                }
+                else
+                {
+                    status = "add_function_paramters_lost , ) [ for paramters";
+                }*/
+            }
+
+    }
+    else
+    {
+        status="add_function_paramters_paramter_name_error";
+    }
     return status;
 }
+
+//////////////////////////////////////////////////////////////////
+void compile::function_ends_processing()
+{
+
+}
+
+
+std::string compile::compile_ends_processing()
+{
+    std::string status="";
+    return status;
+}
+
+std::string compile::statement_processing()
+{
+    //statement_processing_ok
+    std::string status="";
+    return status;
+}
+
+
+

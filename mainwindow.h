@@ -8,6 +8,7 @@
 #include <string>
 #include <QListWidgetItem>
 #include <vector>
+#include <map>
 #include "compile.h"
 #include "cpu_instructions.h"
 #include "cpu_symbolic_character_process.h"

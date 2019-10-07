@@ -6,6 +6,7 @@
 #define MAX_LOCAL_VALUABLES 65535
 #define MAX_PAGE 256
 #define MAX_FUNCTION 65535
+
 class compile
 {
 public:
@@ -28,6 +29,8 @@ public:
     unsigned int m_global_end_address;
     //allocate address in RAM
     unsigned int m_RAM_allocate_address;
+    unsigned int m_RAM_allocate_address_interrupted;
+    unsigned int m_RAM_allocate_address_interrupt_status;
 
     //ROM tmp cache
     std::vector<unsigned char>  m_ROM_Cache;
@@ -42,6 +45,7 @@ public:
     //main entry address
     unsigned int m_MAIN_entry_in_ROM;
 
+
     //functions
     unsigned int    m_total_functions;
     std::string     m_func_name[MAX_FUNCTION];
@@ -51,25 +55,33 @@ public:
     std::string     m_func_share[MAX_FUNCTION];
     unsigned int m_func_RAM_end_address[MAX_FUNCTION];
     unsigned int m_func_paramter_base_address[MAX_FUNCTION];
-    unsigned int m_func_paramter_offset_address[MAX_FUNCTION];
+    unsigned int m_func_paramter_offset_address[MAX_FUNCTION];//how many paramters this function has
     std::string  m_func_paramter_name[MAX_FUNCTION];
     std::string  m_func_paramter_type[MAX_FUNCTION];
     unsigned int m_func_paramter_address[MAX_FUNCTION];
+    //key words
+    std::string  *m_keyword;
+    unsigned int m_keyword_total;
 
 
 
     compile();
+    unsigned int items_conflict(std::string ssrc[], std::string sdes[], unsigned int isrc[], unsigned int ides[], unsigned int src_count, unsigned int des_count, unsigned int int_or_string);
+    unsigned int items_repeat(std::string str[],unsigned int numbers[], unsigned int count,unsigned int int_or_string);
     int symbolic_space_newline_comment_jumper(std::string &str, int &count);
-    unsigned char get_valuable(std::string str);
-    unsigned char scan_valuable();
+    std::string get_valuable(std::string str);
+    std::string scan_valuable();
     int get_number_value();
     void init_RAM_with_value(unsigned int RAM_allocate_address,unsigned int value);
     ////////////////////////////////////
-    unsigned char scan_funciton();
-    unsigned int getRAMaddress4function();
+    std::string compiling_all(std::string str);
+    std::string getRAMaddress4function();
     std::string scan_function_definition();
     std::string scan_function_name_paramters(std::string str);
     std::string add_function_paramters(std::string str);
+    void function_ends_processing();
+    std::string compile_ends_processing();
+    std::string statement_processing();
 };
 
 #endif // COMPILE_H

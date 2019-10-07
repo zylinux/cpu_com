@@ -111,6 +111,7 @@ void MainWindow::on_pushButtonSave_clicked()
 void MainWindow::on_pushButtonCompiler_clicked()
 {
     QString display;
+    std::string status="";
     //check if you selected file to compile
     if(ui->listWidgetFile->currentRow() < 0)
     {
@@ -170,8 +171,9 @@ void MainWindow::on_pushButtonCompiler_clicked()
 
 
 
-    // 4a set bin buff and count for instructions class to generate bin
-    ui->textEditMessage->append("->compile step 4a before");
+    // 4 real compile
+    ui->textEditMessage->append("->COMPILE STEPS STARTS");
+    ui->textEditMessage->append("->compile step 4a - init");
     //ROM page
     for(int i=0;i<MAX_PAGE;i++)
     {
@@ -182,23 +184,43 @@ void MainWindow::on_pushButtonCompiler_clicked()
     //ROM tmp cache
     g_compile_o.m_ROM_Cache.clear();
     g_compile_o.m_ROM_Cahce_c = 0;
+
+    //interruptramaddress status
+    g_compile_o.m_RAM_allocate_address_interrupt_status=0;
+    //global constants?????
+
     //global valuables
     g_compile_o.m_total_global_valuables=0;
     //RAM page switch control
     g_compile_o.m_ROM_PAGE_init_f = 1;
     g_compile_o.m_RAM_allocate_address = 25;//0x00000 - 0x80000 - 512KBytes
-    g_instruction_o.set_buff_count(&g_compile_o.m_ROM_Cache,&g_compile_o.m_ROM_Cahce_c);
-    //init the rom bin with couple bytes
-    g_instruction_o.I_A_set(0x00);
-    g_instruction_o.I_B_set(0x00);
-    g_instruction_o.I_A0_set(0x00);
-    g_instruction_o.I_A1_set(0x00);
-    g_instruction_o.I_A2_set(0x00);
-    // 4c scan global valueable
-    g_compile_o.m_code_count = 0;
-    g_compile_o.scan_valuable();
-    g_compile_o.scan_funciton();
 
+    //need to setup ROM buff to fill out instructions , excited !!!!!
+    g_instruction_o.set_buff_count(&g_compile_o.m_ROM_Cache,&g_compile_o.m_ROM_Cahce_c);
+
+    //init the rom bin with couple bytes
+    g_instruction_o.I_A_set(0x01);//for fun
+    g_instruction_o.I_B_set(0x02);//for fun
+    g_instruction_o.I_A0_set(0x01);//for fun
+    g_instruction_o.I_A1_set(0x01);//for fun
+    g_instruction_o.I_A2_set(0x00);//for fun
+
+    //step 4b scan global valueable
+    ui->textEditMessage->append("->compile step 4b - scan global valuables");
+    g_compile_o.m_code_count = 0;
+    status = g_compile_o.scan_valuable();
+
+
+    //main step here !!!!!
+    ui->textEditMessage->append("->compile step 4c - real compiling");
+    status = g_compile_o.compiling_all(status);//in this function, we will do a lot of stuff man !!!!!
+    ui->textEditMessage->append(QString::fromStdString(status));
+    ui->textEditMessage->append("->COMPILE STEPS ENDS");
+    //main step finished here !!!!!
+
+
+
+    //some debug informaiton prints
     display = QString::fromStdString(g_compile_o.m_code);
     display.append("\nmin current position->");
     display.append(QString::number(g_compile_o.m_code_count));
@@ -217,19 +239,6 @@ void MainWindow::on_pushButtonCompiler_clicked()
     }
     ui->textEditMessage->append(display);
     ui->textEditMessage->append("->compile step 4 end");
-
-
-
-
-    // 5 scan function
-
-
-
-
-
-
-
-    // 6 scan local valueable
 
 }
 
