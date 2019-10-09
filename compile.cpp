@@ -878,19 +878,18 @@ std::string compile::compiling_all(std::string str)
     if("scan_valuable_over" == status||"get_valuable_go2funcitonscan"==status)
     {
         this->m_MAIN_entry_in_ROM = this->m_ROM_PAGE_use * SIZE_PER_PAGE + this->m_ROM_Cahce_c;
-        //page_jump(0);?????
+        g_instruction_o.I_PAGE_JUMP(0);
         this->m_ROM_PAGE[this->m_ROM_PAGE_use] = this->m_ROM_Cache;
         this->m_ROM_PAGE_byte_use_c[this->m_ROM_PAGE_use]=this->m_ROM_Cahce_c;
-
+        //m_global stuff
         this->m_total_global_valuables = this->m_total_local_valuables;
         memcpy(this->m_global_valuable_name, this->m_local_valuable_name, sizeof(this->m_local_valuable_name));
         memcpy(this->m_global_valuable_type, this->m_local_valuable_type, sizeof(this->m_local_valuable_type));
         memcpy(this->m_global_valuable_address, this->m_local_valuable_address, sizeof(this->m_local_valuable_address));
         this->m_global_end_address = this->m_RAM_allocate_address;
-
+        //
         this->m_total_functions = 0;
         this->m_func_paramter_base_address[this->m_total_functions] = 0;
-
         this->m_ROM_PAGE_init_f = 0;
 
         do
@@ -942,7 +941,7 @@ std::string compile::compiling_all(std::string str)
                             this->m_func_RAM_end_address[this->m_total_functions] = this->m_RAM_allocate_address;//all local valuables ends
                             if('}'== this->m_code[this->m_code_count])
                             {
-                                this->function_ends_processing();//dealwith ?????
+                                this->function_ends_processing();
                                 this->m_code_count++;
                                 this->symbolic_space_newline_comment_jumper((std::string&)this->m_code,(int&)this->m_code_count);
 
@@ -1879,13 +1878,124 @@ std::string compile::add_function_paramters(std::string str)
 //////////////////////////////////////////////////////////////////
 void compile::function_ends_processing()
 {
+    if("main" != this->m_func_name[this->m_total_functions] && "void" == this->m_func_type[this->m_total_functions])
+    {
+        if("share_in_page"==this->m_func_share[this->m_total_functions])
+        {
+            g_instruction_o.I_FUN_RETURN_IN_PAGE(this->m_func_return_address[this->m_total_functions]);
+        }
+        else
+        {
+            g_instruction_o.I_FUN_RETURN_BETWEEN_PAGES(this->m_func_return_address[this->m_total_functions]);
+        }
 
+    }
+    this->m_ROM_PAGE[((this->m_func_entry_address[this->m_total_functions])/SIZE_PER_PAGE)] = this->m_ROM_Cache;
+
+    this->m_ROM_PAGE_byte_use_c[((this->m_func_entry_address[this->m_total_functions])/SIZE_PER_PAGE)] = this->m_ROM_Cahce_c;
+
+    this->m_total_functions++;
+    qDebug()<<"MINMIN "<<"FUNCTION "<<this->m_func_name[this->m_total_functions].c_str()<<" compile ok in page "<<((this->m_func_entry_address[this->m_total_functions])/SIZE_PER_PAGE)<<"size "<<this->m_ROM_PAGE_byte_use_c[(this->m_func_entry_address[this->m_total_functions])/SIZE_PER_PAGE]<<endl;
 }
 
 
 std::string compile::compile_ends_processing()
 {
-    std::string status="";
+    //compile_ends_processing_main???sucks
+    //compile_ends_processing_ok_completed
+    //compile_ends_processing_ROM_overfloat
+    std::string status = "";
+    unsigned int count = 0;
+
+    std::vector<unsigned char>  output;
+
+    if("main"==this->m_func_name[this->m_total_functions-1])
+    {
+        status = "compile_ends_processing_ok_completed";
+        qDebug()<<"MINMIN "<< "modifying main function entry address " <<this->m_func_entry_address[this->m_total_functions]<<endl;
+        this->m_ROM_Cache = this->m_ROM_PAGE[this->m_MAIN_entry_in_ROM/SIZE_PER_PAGE];
+
+
+        this->m_ROM_Cache[(this->m_MAIN_entry_in_ROM & (SIZE_PER_PAGE-1))+2] = (unsigned char)(this->m_func_entry_address[this->m_total_functions] >>16);
+        this->m_ROM_Cache[(this->m_MAIN_entry_in_ROM & (SIZE_PER_PAGE-1))+9] = (unsigned char)(this->m_func_entry_address[this->m_total_functions] >>8);
+        this->m_ROM_Cache[(this->m_MAIN_entry_in_ROM & (SIZE_PER_PAGE-1))+16] = (unsigned char)(this->m_func_entry_address[this->m_total_functions]);
+
+        this->m_ROM_PAGE[this->m_MAIN_entry_in_ROM/SIZE_PER_PAGE] = this->m_ROM_Cache;
+
+        output.clear();
+        count=0;
+        do{
+            this->m_ROM_Cache = this->m_ROM_PAGE[count];
+            this->m_ROM_Cahce_c = this->m_ROM_PAGE_byte_use_c[count];
+            qDebug()<<"MINMIN "<< "ROM page "<<count<<" used bytes "<<this->m_ROM_Cahce_c<<" remains bytes "<<(SIZE_PER_PAGE-SIZE_PAGE_JUMP-this->m_ROM_Cahce_c)<<"(page jumper instructions take 48 bytes)"<<endl;
+
+            if(this->m_ROM_Cahce_c < (SIZE_PER_PAGE-SIZE_PAGE_JUMP))
+            {
+                //give 256 ' '
+                while((this->m_ROM_Cahce_c+256) < (SIZE_PER_PAGE-SIZE_PAGE_JUMP))
+                {
+                    for(int i=0;i<256;i++)
+                    {
+                        this->m_ROM_Cache.push_back(' ');
+                    }
+                    this->m_ROM_Cahce_c = m_ROM_Cahce_c + 256;
+                }
+                //if still not enough , then give nop();
+                g_instruction_o.set_buff_count(&this->m_ROM_Cache,&this->m_ROM_Cahce_c);
+                while(this->m_ROM_Cahce_c<(SIZE_PER_PAGE-SIZE_PAGE_JUMP))
+                {
+                    g_instruction_o.I_NOP();
+                }
+                //?????
+
+
+                //?????
+                output.insert(output.end(),this->m_ROM_Cache.begin(),this->m_ROM_Cache.end());
+                count++;
+
+            }
+            else
+            {
+                status = "compile_ends_processing_ROM_overfloat";
+                count = MAX_PAGE;
+            }
+        }
+        while(count<this->m_ROM_PAGE_use);
+
+        if("compile_ends_processing_ok_completed" == status)
+        {
+            if(this->m_func_RAM_end_address[this->m_total_functions] < SIZE_PER_PAGE && this->m_func_RAM_end_address[this->m_total_functions] < (SIZE_PER_PAGE-SIZE_PAGE_JUMP))
+            {
+                qDebug()<<"MINMIN "<< "RAM used bytes "<<this->m_func_RAM_end_address[this->m_total_functions]<<" remains bytes "<<(512*1024-this->m_func_RAM_end_address[this->m_total_functions])<<endl;
+            }
+            else
+            {
+                status = "compile_ends_processing_ROM_overfloat";
+            }
+        }
+
+        if("compile_ends_processing_ok_completed" == status)
+        {
+            //output the code to CPU.bin
+            QString filename = "CPU.bin";
+            QFile fileout(filename);
+            if (fileout.open(QFile::ReadWrite | QFile::Text))
+            {
+             QTextStream out(&fileout);
+             for(auto it = output.begin(); it != output.end(); ++it)
+             {
+                out<<*it;
+             }
+
+             fileout.close();
+            }
+        }
+
+    }
+    else
+    {
+        status = "compile_ends_processing_main???sucks";
+    }
     return status;
 }
 

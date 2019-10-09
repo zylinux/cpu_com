@@ -433,3 +433,78 @@ void cpu_instructions::I_JMP_A2A1A0()
         *(this->rom_count)+=2;
     }
 }
+
+
+
+
+
+
+//use the command above !!!!
+void cpu_instructions::I_JUMP(unsigned int x)
+{
+    this->I_A1_set((x>>8));
+    this->I_A0_set(x);
+    this->I_JMP_A2A1A0();
+}
+
+//RAM address changes
+void cpu_instructions::I_LOADRAM_TO_A(unsigned int x)
+{
+    //gets data from A and stores to the A2A1A0 address
+    this->I_A1_set((unsigned char)(x>>8));
+    this->I_A0_set((unsigned char)x);
+    this->I_A_TO_RAM();
+}
+
+void cpu_instructions::I_LOADA_TO_RAM(unsigned int x)
+{
+    //gets data from A and stores to the A2A1A0 address
+    this->I_A1_set((unsigned char)(x>>8));
+    this->I_A0_set((unsigned char)x);
+    this->I_RAM_TO_A();
+}
+
+
+//pages stuff , x is actually the address not page number!!!
+void cpu_instructions::I_PAGE_JUMP(unsigned int x)
+{
+    //split the x into 0,1,2 memory of the page before we jump
+    this->I_A_set((unsigned char)(x>>16));
+    this->I_LOADA_TO_RAM(PAGE_CS);// store x 24-16 to address 2
+    this->I_A_set((unsigned char)(x>>8));
+    this->I_LOADA_TO_RAM(PAGE_ADD_H);//store x 16-8  to address 1
+    this->I_A_set((unsigned char)x);
+    this->I_LOADA_TO_RAM(PAGE_ADD_L);//store x 8-0 to address 0
+    this->I_JUMP((SIZE_PER_PAGE - SIZE_PAGE_JUMP));//jump to very end of page address
+}
+//
+void cpu_instructions::I_FUN_RETURN_IN_PAGE(unsigned int ret_address)
+{
+    //load ram data to A
+    this->I_A1_set((ret_address>>8));
+    this->I_A0_set(ret_address);
+    this->I_RAM_TO_A();
+    //load ram data to A1
+    this->I_A1_set(((ret_address+1)>>8));
+    this->I_A0_set((ret_address+1));
+    this->I_RAM_TO_A1();
+    //load A to A0
+    this->I_A_TO_A0();
+    //jump
+    this->I_JMP_A2A1A0();
+}
+//
+void cpu_instructions::I_FUN_RETURN_BETWEEN_PAGES(unsigned int ret_address)
+{
+    //split the x into 0,1,2 memory of the page before we jump
+    this->I_LOADRAM_TO_A(ret_address);
+    this->I_LOADA_TO_RAM(PAGE_ADD_L);
+
+    this->I_LOADRAM_TO_A((ret_address+1));
+    this->I_LOADA_TO_RAM(PAGE_ADD_H);
+
+    this->I_LOADRAM_TO_A((ret_address+2));
+    this->I_LOADA_TO_RAM(PAGE_CS);
+
+    this->I_JUMP((SIZE_PER_PAGE - SIZE_PAGE_JUMP));
+}

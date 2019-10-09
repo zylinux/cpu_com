@@ -2,10 +2,13 @@
 #define COMPILE_H
 #include "mainwindow.h"
 #define SIZE_PER_PAGE 524288
+#define SIZE_PAGE_JUMP 48
 #define MAX_SRC_FILE 65535
 #define MAX_LOCAL_VALUABLES 65535
 #define MAX_PAGE 256
 #define MAX_FUNCTION 65535
+
+
 
 class compile
 {

@@ -184,11 +184,9 @@ void MainWindow::on_pushButtonCompiler_clicked()
     //ROM tmp cache
     g_compile_o.m_ROM_Cache.clear();
     g_compile_o.m_ROM_Cahce_c = 0;
-
     //interruptramaddress status
     g_compile_o.m_RAM_allocate_address_interrupt_status=0;
     //global constants?????
-
     //global valuables
     g_compile_o.m_total_global_valuables=0;
     //RAM page switch control
@@ -204,6 +202,7 @@ void MainWindow::on_pushButtonCompiler_clicked()
     g_instruction_o.I_A0_set(0x01);//for fun
     g_instruction_o.I_A1_set(0x01);//for fun
     g_instruction_o.I_A2_set(0x00);//for fun
+    g_instruction_o.I_NOP();
 
     //step 4b scan global valueable
     ui->textEditMessage->append("->compile step 4b - scan global valuables");

@@ -2,6 +2,9 @@
 #define CPU_INSTRUCTIONS_H
 #include "mainwindow.h"
 
+#define PAGE_CS 2
+#define PAGE_ADD_H  1
+#define PAGE_ADD_L  0
 
 class cpu_instructions
 {
@@ -100,6 +103,15 @@ public:
     void I_JNSABI_A2A1A0();
     void I_JMP_A2A1A0();
 
+
+
+    //page related jump
+    void I_LOADRAM_TO_A(unsigned int x);
+    void I_LOADA_TO_RAM(unsigned int x);
+    void I_PAGE_JUMP(unsigned int x);
+    void I_JUMP(unsigned int x);
+    void I_FUN_RETURN_IN_PAGE(unsigned int ret_address);
+    void I_FUN_RETURN_BETWEEN_PAGES(unsigned int ret_address);
 
 };
 
